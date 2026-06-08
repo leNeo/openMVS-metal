@@ -33,6 +33,9 @@
 #include "Scene.h"
 #include "SceneDensify.h"
 #include "PatchMatchCUDA.h"
+#ifdef _USE_METAL
+#include "PatchMatchMetal.h"
+#endif // _USE_METAL
 // MRF: view selection
 #include "../Math/TRWS/MRFEnergy.h"
 
@@ -621,6 +624,14 @@ bool DepthMapsData::EstimateDepthMap(IIndex idxImage, int nGeometricIter)
 		return true;
 	}
 	#endif // _USE_CUDA
+
+	#ifdef _USE_METAL
+	if (pmMetal) {
+		// EstimateDepthMap is reentrant: the dense phase may run it on 2 workers
+		pmMetal->EstimateDepthMap(arrDepthData[idxImage]);
+		return true;
+	}
+	#endif // _USE_METAL
 
 	TD_TIMER_STARTD();
 
@@ -1831,6 +1842,17 @@ bool Scene::ComputeDepthMaps(DenseDepthMapData& data)
 	}
 	#endif // _USE_CUDA
 
+	#ifdef _USE_METAL
+	// initialize Metal (Apple Silicon); OPENMVS_DISABLE_METAL=1 forces the CPU path
+	if (!getenv("OPENMVS_DISABLE_METAL") && data.nFusionMode >= 0) {
+		data.depthMaps.pmMetal = new METAL::PatchMatch();
+		if (!data.depthMaps.pmMetal->IsValid())
+			data.depthMaps.pmMetal.Release();
+		else
+			data.depthMaps.pmMetal->Init(false);
+	}
+	#endif // _USE_METAL
+
 	// initialize the queue of images to be processed
 	const int nOptimize(OPTDENSE::nOptimize);
 	if (OPTDENSE::nEstimationGeometricIters && data.nFusionMode >= 0)
@@ -1865,6 +1887,13 @@ bool Scene::ComputeDepthMaps(DenseDepthMapData& data)
 			data.depthMaps.pmCUDA->Init(true);
 		}
 		#endif // _USE_CUDA
+
+		#ifdef _USE_METAL
+		if (data.depthMaps.pmMetal && OPTDENSE::nEstimationGeometricIters) {
+			data.depthMaps.pmMetal->Release();
+			data.depthMaps.pmMetal->Init(true);
+		}
+		#endif // _USE_METAL
 		while (++data.nEstimationGeometricIter < (int)OPTDENSE::nEstimationGeometricIters) {
 			// initialize the queue of images to be geometric processed
 			if (data.nEstimationGeometricIter+1 == (int)OPTDENSE::nEstimationGeometricIters)

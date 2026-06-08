@@ -35,6 +35,19 @@ endif()
 GET_FILENAME_COMPONENT(PATH_PythonWrapper_cpp ${CMAKE_CURRENT_SOURCE_DIR}/PythonWrapper.cpp ABSOLUTE)
 LIST(REMOVE_ITEM LIBRARY_FILES_C "${PATH_PythonWrapper_cpp}")
 
+# Metal backend (Apple Silicon): the .mm is not matched by the *.cpp glob; embed
+# the MSL kernels (single source of truth) into a header generated at configure time.
+if(_USE_METAL)
+	file(READ "${CMAKE_CURRENT_SOURCE_DIR}/PatchMatchMetal.metal" _PATCHMATCH_MSL_SRC)
+	file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/PatchMatchMetal_msl.h"
+"// AUTO-GENERATED at configure time from PatchMatchMetal.metal -- do not edit.
+#pragma once
+static const char* kPatchMatchMSL = R\"METALSRC(
+${_PATCHMATCH_MSL_SRC})METALSRC\";
+")
+	LIST(APPEND LIBRARY_FILES_C "${CMAKE_CURRENT_SOURCE_DIR}/PatchMatchMetal.mm")
+endif()
+
 cxx_library_with_type(MVS "Libs" "" "${cxx_default}"
 	${LIBRARY_FILES_C} ${LIBRARY_FILES_H}
 )
@@ -51,6 +64,16 @@ if(_USE_CUDA)
 	SET_TARGET_PROPERTIES(MVS PROPERTIES CUDA_ARCHITECTURES "50;72;75")
 endif()
 TARGET_LINK_LIBRARIES(MVS PRIVATE Common Math IO CGAL::CGAL ${CERES_LIBRARIES} ${CUDA_CUDA_LIBRARY})
+
+# Metal backend: compile the .mm as Objective-C++ with ARC, skip the C++ PCH,
+# expose the generated MSL header, and link the Apple frameworks.
+if(_USE_METAL)
+	set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/PatchMatchMetal.mm" PROPERTIES
+		SKIP_PRECOMPILE_HEADERS ON
+		COMPILE_OPTIONS "-fobjc-arc")
+	TARGET_INCLUDE_DIRECTORIES(MVS PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+	TARGET_LINK_LIBRARIES(MVS PUBLIC "-framework Metal" "-framework Foundation")
+endif()
 
 if(OpenMVS_USE_PYTHON)
 	# Create the Python wrapper

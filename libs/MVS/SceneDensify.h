@@ -47,6 +47,9 @@ class MVS_API Scene;
 #ifdef _USE_CUDA
 class PatchMatchCUDA;
 #endif // _USE_CUDA
+#ifdef _USE_METAL
+namespace METAL { class PatchMatch; }
+#endif // _USE_METAL
 
 // structure used to compute all depth-maps
 class MVS_API DepthMapsData
@@ -90,6 +93,10 @@ public:
 	// used internally to estimate the depth-maps using CUDA
 	CAutoPtr<PatchMatchCUDA> pmCUDA;
 	#endif // _USE_CUDA
+	#ifdef _USE_METAL
+	// used internally to estimate the depth-maps using Metal (Apple Silicon)
+	CAutoPtr<METAL::PatchMatch> pmMetal;
+	#endif // _USE_METAL
 };
 /*----------------------------------------------------------------*/
 
